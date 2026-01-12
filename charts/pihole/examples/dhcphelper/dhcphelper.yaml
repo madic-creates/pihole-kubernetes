@@ -25,6 +25,8 @@ spec:
     spec:
       # Required: Must use host network to receive Layer 2 DHCP broadcasts
       hostNetwork: true
+      # Use cluster DNS despite hostNetwork
+      dnsPolicy: ClusterFirstWithHostNet
 
       # Optional: Pin to a specific node
       # Uncomment and adjust for your cluster
@@ -93,6 +95,7 @@ spec:
 #         app: dhcphelper
 #     spec:
 #       hostNetwork: true
+#       dnsPolicy: ClusterFirstWithHostNet
 #       tolerations:
 #         - key: node-role.kubernetes.io/control-plane
 #           operator: Exists
