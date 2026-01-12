@@ -24,14 +24,14 @@ spec:
           port: {{ .Values.webHttps }}
         # DNS UDP
         - protocol: UDP
-          port: 53
+          port: {{ .Values.serviceDns.port }}
         # DNS TCP
         - protocol: TCP
-          port: 53
+          port: {{ .Values.serviceDns.port }}
         {{- if .Values.serviceDhcp.enabled }}
         # DHCP
         - protocol: UDP
-          port: 67
+          port: {{ .Values.serviceDhcp.port }}
         {{- end }}
         {{- if .Values.doh.enabled }}
         # DoH/DNSCrypt proxy
