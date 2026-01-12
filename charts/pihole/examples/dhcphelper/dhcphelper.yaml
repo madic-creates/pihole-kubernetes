@@ -28,6 +28,21 @@ spec:
       # Use cluster DNS despite hostNetwork
       dnsPolicy: ClusterFirstWithHostNet
 
+      # Required: Schedule on same node as Pi-hole
+      # Without this, DHCP relay fails due to cross-node networking issues
+      # (UDP frames may not reach Pi-hole or source IP gets rewritten by NAT)
+      # NOTE: Adjust "pihole" value below if your release name differs
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                      - pihole
+              topologyKey: "kubernetes.io/hostname"
+
       # Optional: Pin to a specific node
       # Uncomment and adjust for your cluster
       # nodeSelector:
@@ -73,49 +88,3 @@ spec:
 
       # Minimal restart policy
       restartPolicy: Always
-
----
-# Alternative: DaemonSet for multi-node DHCP coverage
-# Uncomment this and comment out the Deployment above if you need
-# DHCP relay on every node in your cluster.
-#
-# apiVersion: apps/v1
-# kind: DaemonSet
-# metadata:
-#   name: dhcphelper
-#   labels:
-#     app: dhcphelper
-# spec:
-#   selector:
-#     matchLabels:
-#       app: dhcphelper
-#   template:
-#     metadata:
-#       labels:
-#         app: dhcphelper
-#     spec:
-#       hostNetwork: true
-#       dnsPolicy: ClusterFirstWithHostNet
-#       tolerations:
-#         - key: node-role.kubernetes.io/control-plane
-#           operator: Exists
-#           effect: NoSchedule
-#       containers:
-#         - name: dhcphelper
-#           image: homeall/dhcphelper:latest
-#           securityContext:
-#             capabilities:
-#               add:
-#                 - NET_ADMIN
-#           env:
-#             - name: IP
-#               value: "10.96.0.100"  # <-- UPDATE THIS VALUE
-#             - name: TZ
-#               value: "Europe/Berlin"
-#           resources:
-#             limits:
-#               cpu: 50m
-#               memory: 32Mi
-#             requests:
-#               cpu: 10m
-#               memory: 16Mi
