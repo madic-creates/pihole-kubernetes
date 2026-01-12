@@ -247,13 +247,13 @@ spec:
           - containerPort: {{ .Values.webHttp }}
             name: http
             protocol: TCP
-          - containerPort: 53
+          - containerPort: {{ .Values.serviceDns.port }}
             name: dns
             protocol: TCP
           {{- if .Values.dnsHostPort.enabled }}
             hostPort: {{ .Values.dnsHostPort.port }}
           {{- end }}
-          - containerPort: 53
+          - containerPort: {{ .Values.serviceDns.port }}
             name: dns-udp
             protocol: UDP
           {{- if .Values.dnsHostPort.enabled }}
@@ -262,7 +262,7 @@ spec:
           - containerPort:  {{ .Values.webHttps }}
             name: https
             protocol: TCP
-          - containerPort: 67
+          - containerPort: {{ .Values.serviceDhcp.port }}
             name: client-udp
             protocol: UDP
           {{- if .Values.probes.liveness.enabled }}
