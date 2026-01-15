@@ -1,11 +1,17 @@
-# DHCP Helper Deployment
+# DHCP Helper Deployment (Rootless)
 #
 # This container receives DHCP broadcasts on the host network and forwards
 # them as unicast to the Pi-hole pod. This allows Pi-hole to handle DHCP
 # without requiring hostNetwork on the Pi-hole pod itself.
 #
-# IMPORTANT: Update PIHOLE_IP with your Pi-hole DHCP service ClusterIP:
-#   kubectl get svc pihole-dhcp -o jsonpath='{.spec.clusterIP}'
+# ROOTLESS OPERATION:
+# This deployment runs as unprivileged user (nobody/65534) using alternate
+# ports 1067/1068 instead of privileged ports 67/68.
+#
+# PREREQUISITE: Traffic Control (tc) rules must be configured on each node
+# to redirect DHCP traffic. See README.md for details.
+#
+# NOTE: Adjust the service name below if your Helm release is not named "pihole"
 
 apiVersion: apps/v1
 kind: Deployment
@@ -50,23 +56,27 @@ spec:
 
       containers:
         - name: dhcphelper
-          image: homeall/dhcphelper:latest
+          image: ghcr.io/slyrc/dhcp-helper:1.3.0
 
-          # Required for network operations
+          # Rootless security context
           securityContext:
+            runAsUser: 65534       # nobody
+            runAsGroup: 65534
+            allowPrivilegeEscalation: false
             capabilities:
-              add:
-                - NET_ADMIN
+              drop: ["ALL"]
 
-          env:
-            # IMPORTANT: Set this to your Pi-hole DHCP service ClusterIP
-            # Get it with: kubectl get svc pihole-dhcp -o jsonpath='{.spec.clusterIP}'
-            - name: IP
-              value: "10.96.0.100"  # <-- UPDATE THIS VALUE
-
-            # Optional: Timezone
-            - name: TZ
-              value: "Europe/Berlin"
+          # dhcp-helper arguments for rootless operation with alternate ports
+          # -p 1067  : Listen on port 1067 instead of 67 (requires tc redirect)
+          # -P 1068  : Use port 1068 for responses instead of 68
+          # -s       : Pi-hole DHCP service (DNS name for cluster resolution)
+          args:
+            - "-p"
+            - "1067"
+            - "-P"
+            - "1068"
+            - "-s"
+            - "pihole-dhcp.default.svc.cluster.local"  # <-- Adjust namespace if needed
 
           # Health check
           livenessProbe:

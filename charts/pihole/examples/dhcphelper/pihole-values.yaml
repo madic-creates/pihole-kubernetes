@@ -1,7 +1,12 @@
-# Pi-hole values for use with DHCP Helper
+# Pi-hole values for use with DHCP Helper (Rootless)
 #
 # This configuration runs Pi-hole WITHOUT hostNetwork, using a separate
 # DHCP helper container to handle Layer 2 broadcast requirements.
+#
+# ROOTLESS OPERATION:
+# Both Pi-hole and the DHCP helper use alternate ports 1067/1068 instead of
+# privileged ports 67/68. This requires tc rules on each node to redirect
+# DHCP traffic. See README.md for details.
 #
 # See README.md in this directory for full deployment instructions.
 
@@ -13,11 +18,12 @@ persistentVolumeClaim:
   enabled: true
   size: "500Mi"
 
-# Enable DHCP service (ClusterIP by default)
-# After deployment, get the ClusterIP and configure it in dhcphelper.yaml
+# Enable DHCP service on alternate port 1067 (rootless)
+# After deployment, the dhcphelper uses DNS name to resolve the service
 serviceDhcp:
   enabled: true
   type: ClusterIP
+  port: 1067  # Alternate port for rootless operation
 
 # DNS service configuration
 # Adjust type based on your setup (LoadBalancer for MetalLB, NodePort, etc.)
@@ -31,8 +37,17 @@ serviceDns:
 serviceWeb:
   type: ClusterIP
 
-# Optional: Custom DNS entries
+# dnsmasq configuration for rootless DHCP operation
 dnsmasq:
+  # Required for rootless DHCP
+  customSettings:
+    # Use ports 1067/1068 instead of privileged ports 67/68
+    - dhcp-alternate-port
+    # Send DHCP responses as broadcast (required when dhcp-helper relays requests,
+    # since the client MAC is not yet in the ARP table)
+    - dhcp-broadcast
+
+  # Optional: Custom DNS entries
   customDnsEntries:
     - address=/gateway.lan/192.168.1.1
     - address=/pihole.lan/192.168.1.10

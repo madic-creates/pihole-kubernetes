@@ -1,6 +1,8 @@
-# Pi-hole with DHCP Helper
+# Pi-hole with DHCP Helper (Rootless)
 
 This example shows how to deploy Pi-hole with DHCP functionality **without** using `hostNetwork: true` on the Pi-hole pod. Instead, a lightweight DHCP helper container handles the Layer 2 broadcast requirements.
+
+**Rootless Operation**: This configuration runs the DHCP helper as an unprivileged user (nobody/65534) with all capabilities dropped, improving security.
 
 ## Problem
 
@@ -24,35 +26,62 @@ This approach keeps Pi-hole in normal pod networking while only the minimal DHCP
 ```
 ┌─────────────────┐     DHCP Broadcast      ┌──────────────────┐
 │  DHCP Client    │ ───────────────────────►│  DHCP Helper     │
-│  (Layer 2)      │                         │  (hostNetwork)   │
-└─────────────────┘                         └────────┬─────────┘
-                                                     │ Unicast
-                                                     ▼
-                                            ┌──────────────────┐
-                                            │  Pi-hole Pod     │
-                                            │  (ClusterIP)     │
-                                            └──────────────────┘
+│  (Layer 2)      │      (port 67)          │  (hostNetwork)   │
+└─────────────────┘          │              └────────┬─────────┘
+                             │                       │ Unicast
+                        tc redirect                  │ (port 1067)
+                        67 → 1067                    ▼
+                                           ┌──────────────────┐
+                                           │  Pi-hole Pod     │
+                                           │  (ClusterIP:1067)│
+                                           └──────────────────┘
 ```
+
+## Prerequisites: Traffic Control (tc) Rules
+
+Since the DHCP helper runs as an unprivileged user, it cannot bind to privileged ports 67/68. Instead, it uses alternate ports 1067/1068. Traffic Control (tc) rules must be configured on each node to redirect DHCP traffic between the standard and alternate ports.
+
+**Required tc rules on each node:**
+
+```bash
+# Ingress: Redirect incoming DHCP requests (port 67 → 1067)
+tc qdisc add dev eth0 ingress
+tc filter add dev eth0 parent ffff: protocol ip u32 \
+  match ip dport 67 0xffff action nat ingress any 1067
+
+# Egress: Rewrite outgoing DHCP responses (port 1067 → 67, 1068 → 68)
+tc qdisc add dev eth0 root handle 1: prio
+tc filter add dev eth0 parent 1: protocol ip u32 \
+  match ip sport 1067 0xffff action nat egress any 67
+tc filter add dev eth0 parent 1: protocol ip u32 \
+  match ip dport 1068 0xffff action nat egress any 68
+```
+
+**Note**: Replace `eth0` with your node's network interface. The exact tc configuration depends on your environment and may require adjustments. Configuration of tc rules is the responsibility of the user and is outside the scope of this Helm chart.
+
+Possible approaches for managing tc rules:
+- Manual configuration on each node
+- DaemonSet with privileged init container
+- Node provisioning tools (cloud-init, Ansible, etc.)
+- CNI plugin configuration
 
 ## Deployment
 
-### 1. Deploy Pi-hole
+### 1. Configure tc rules
 
-Deploy Pi-hole using the provided values file. Pi-hole runs with normal pod networking and exposes DHCP via a ClusterIP service:
+Before deploying, ensure tc rules are configured on all nodes where the DHCP helper will run. See the Prerequisites section above.
+
+### 2. Deploy Pi-hole
+
+Deploy Pi-hole using the provided values file. Pi-hole runs with normal pod networking and exposes DHCP via a ClusterIP service on port 1067:
 
 ```bash
 helm install pihole mojo2600/pihole -f pihole-values.yaml
 ```
 
-**Important**: Note the ClusterIP assigned to the DHCP service after deployment:
+### 3. Deploy DHCP Helper
 
-```bash
-kubectl get svc pihole-dhcp -o jsonpath='{.spec.clusterIP}'
-```
-
-### 2. Deploy DHCP Helper
-
-Update the `PIHOLE_IP` in `dhcphelper.yaml` with the Pi-hole DHCP service ClusterIP, then deploy:
+Update the service name in `dhcphelper.yaml` if your namespace or release name differs, then deploy:
 
 ```bash
 kubectl apply -f dhcphelper.yaml
@@ -65,40 +94,52 @@ kubectl apply -f dhcphelper.yaml
 Key settings:
 - `hostNetwork: false` - Pi-hole uses normal pod networking
 - `serviceDhcp.enabled: true` - Exposes DHCP on a ClusterIP service
-- `extraEnvVars.DHCP_ACTIVE: true` - Enables DHCP server in Pi-hole
-- Adjust `DHCP_START`, `DHCP_END`, `DHCP_ROUTER` for your network
+- `serviceDhcp.port: 1067` - Alternate port for rootless operation
+- `dnsmasq.customSettings` - Configures dnsmasq for alternate ports:
+  - `dhcp-alternate-port` - Use ports 1067/1068 instead of 67/68
+  - `dhcp-broadcast` - Send DHCP responses as broadcasts
 
 ### DHCP Helper (`dhcphelper.yaml`)
 
 Key settings:
 - `hostNetwork: true` - Required to receive Layer 2 broadcasts
-- `IP` environment variable - Must point to Pi-hole's DHCP service ClusterIP
-- Runs on a specific node via `nodeSelector` (adjust for your cluster)
+- `runAsUser: 65534` - Runs as unprivileged nobody user
+- `capabilities.drop: ["ALL"]` - No capabilities required
+- Container args `-p 1067 -P 1068` - Use alternate ports
+- `-s pihole-dhcp.<namespace>.svc.cluster.local` - Pi-hole service DNS name
 
 ## Troubleshooting
 
 ### DHCP clients not receiving addresses
 
-1. Verify the DHCP helper is running:
+1. Verify tc rules are active on the node:
+   ```bash
+   tc qdisc show dev eth0
+   tc filter show dev eth0 parent ffff:
+   ```
+
+2. Verify the DHCP helper is running:
    ```bash
    kubectl get pods -l app=dhcphelper
    ```
 
-2. Check the helper can reach Pi-hole:
+3. Check the helper can reach Pi-hole on port 1067:
    ```bash
-   kubectl exec -it <dhcphelper-pod> -- nc -uzvw3 <pihole-ip> 67
+   kubectl exec -it <dhcphelper-pod> -- nc -uzvw3 pihole-dhcp.default.svc.cluster.local 1067
    ```
 
-3. Verify Pi-hole DHCP is enabled:
+4. Verify Pi-hole DHCP is enabled:
    - Access Pi-hole admin UI
    - Go to Settings → DHCP
    - Ensure DHCP server is enabled
 
 ### Multiple nodes
 
-If you have multiple nodes and want DHCP on all of them, you can change the DHCP helper to a DaemonSet. Each node will then have its own helper forwarding to Pi-hole.
+If you have multiple nodes and want DHCP on all of them, you can change the DHCP helper to a DaemonSet. Each node will then have its own helper forwarding to Pi-hole. Ensure tc rules are configured on all nodes.
 
 ## References
 
+- [Slyrc/dhcp-helper-container](https://github.com/Slyrc/dhcp-helper-container) - Rootless DHCP helper documentation
 - [homeall/dhcphelper](https://github.com/homeall/dhcphelper) - The DHCP helper container image
 - [Pi-hole Docker DHCP documentation](https://github.com/pi-hole/docker-pi-hole#running-dhcp-from-docker-pi-hole)
+- [dnsmasq manual](https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html) - dhcp-alternate-port and dhcp-broadcast options
