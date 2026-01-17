@@ -67,26 +67,19 @@ spec:
               drop: ["ALL"]
 
           # dhcp-helper arguments for rootless operation with alternate ports
-          # -p 1067  : Listen on port 1067 instead of 67 (requires tc redirect)
-          # -P 1068  : Use port 1068 for responses instead of 68
-          # -s       : Pi-hole DHCP service (DNS name for cluster resolution)
+          # -d  : Skip capability checks (required for rootless operation)
+          # -p  : Use alternate ports 1067/1068 (ports are hardcoded in the image, no argument needed)
+          # -s  : Pi-hole DHCP service (DNS name for cluster resolution)
           args:
-            - "-p"
-            - "1067"
-            - "-P"
-            - "1068"
-            - "-s"
-            - "pihole-dhcp.default.svc.cluster.local"  # <-- Adjust namespace if needed
-
-          # Health check
-          livenessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - "pgrep dhcp-helper"
-            initialDelaySeconds: 10
-            periodSeconds: 30
+             - "-w"
+             - "65"
+             - "-d"
+             - "-p"
+             - "-n"
+             - "-i"
+             - "eth0"
+             - "-s"
+             - "pihole-dhcp.pihole.svc.cluster.local"  # <-- Adjust namespace if needed
 
           resources:
             limits:

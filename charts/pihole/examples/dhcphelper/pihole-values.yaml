@@ -43,9 +43,6 @@ dnsmasq:
   customSettings:
     # Use ports 1067/1068 instead of privileged ports 67/68
     - dhcp-alternate-port
-    # Send DHCP responses as broadcast (required when dhcp-helper relays requests,
-    # since the client MAC is not yet in the ARP table)
-    - dhcp-broadcast
 
   # Optional: Custom DNS entries
   customDnsEntries:

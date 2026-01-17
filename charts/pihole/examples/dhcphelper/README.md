@@ -41,7 +41,33 @@ This approach keeps Pi-hole in normal pod networking while only the minimal DHCP
 
 Since the DHCP helper runs as an unprivileged user, it cannot bind to privileged ports 67/68. Instead, it uses alternate ports 1067/1068. Traffic Control (tc) rules must be configured on each node to redirect DHCP traffic between the standard and alternate ports.
 
-**Required tc rules on each node:**
+> **WARNING**: Traffic Control is a powerful tool that requires careful handling. Poorly configured tc rules can break networking and be difficult to remove. The production-ready script referenced below addresses these concerns.
+
+**Recommended: Use the production-ready tc script**
+
+Use the [tc.sh script from Slyrc/dhcp-helper-container](https://github.com/Slyrc/dhcp-helper-container/blob/master/tc.sh) which provides:
+
+- **Dedicated preferences (prefs)** - Rules can be cleanly deleted without affecting other tc rules
+- **Checksum recalculation** - Recalculates checksums after packet modification, preventing warnings and rejected packets
+- **Precise matching** - Only capture dhcp traffic
+- **Multiple scenarios** - Handles limited and directed broadcast, and unicast renewals
+
+Download and customize the script for your environment:
+
+```bash
+curl -O https://raw.githubusercontent.com/Slyrc/dhcp-helper-container/master/tc.sh
+# Edit the script to set your DEV, NODE_IP, LAN_BCAST, and LAN_CIDR values
+chmod +x tc.sh
+./tc.sh
+```
+
+### Simplified example (not recommended for production)
+
+The following simplified commands demonstrate the concept but have significant limitations:
+- No preferences assigned, making rule cleanup difficult
+- No checksum recalculation, causing packet warnings/rejections
+- Overly broad matching that may affect unintended traffic
+- Uses deprecated `nat` action
 
 ```bash
 # Ingress: Redirect incoming DHCP requests (port 67 → 1067)
@@ -57,7 +83,7 @@ tc filter add dev eth0 parent 1: protocol ip u32 \
   match ip dport 1068 0xffff action nat egress any 68
 ```
 
-**Note**: Replace `eth0` with your node's network interface. The exact tc configuration depends on your environment and may require adjustments. Configuration of tc rules is the responsibility of the user and is outside the scope of this Helm chart.
+**Note**: Replace interface names and IP addresses with your node's values. The exact tc configuration depends on your environment and may require adjustments. Configuration of tc rules is the responsibility of the user and is outside the scope of this Helm chart.
 
 Possible approaches for managing tc rules:
 - Manual configuration on each node
@@ -105,30 +131,30 @@ Key settings:
 - `hostNetwork: true` - Required to receive Layer 2 broadcasts
 - `runAsUser: 65534` - Runs as unprivileged nobody user
 - `capabilities.drop: ["ALL"]` - No capabilities required
-- Container args `-p 1067 -P 1068` - Use alternate ports
-- `-s pihole-dhcp.<namespace>.svc.cluster.local` - Pi-hole service DNS name
+- Container args:
+  - `-d` - Skip capability checks (required for rootless operation)
+  - `-p` - Use alternate ports 1067/1068 (ports are hardcoded internally)
+  - `-s pihole-dhcp.<namespace>.svc.cluster.local` - Pi-hole service DNS name
 
 ## Troubleshooting
 
 ### DHCP clients not receiving addresses
 
-1. Verify tc rules are active on the node:
+1. Verify tc rules are active and check packet counters:
    ```bash
-   tc qdisc show dev eth0
-   tc filter show dev eth0 parent ffff:
+   # Show ingress filter rules and packet counters
+   tc -s filter show dev eth0 ingress
+   # Show egress filter rules and packet counters
+   tc -s filter show dev eth0 egress
    ```
+   The `-s` flag shows statistics including packet counts - if DHCP traffic is flowing, you should see the counters incrementing.
 
 2. Verify the DHCP helper is running:
    ```bash
    kubectl get pods -l app=dhcphelper
    ```
 
-3. Check the helper can reach Pi-hole on port 1067:
-   ```bash
-   kubectl exec -it <dhcphelper-pod> -- nc -uzvw3 pihole-dhcp.default.svc.cluster.local 1067
-   ```
-
-4. Verify Pi-hole DHCP is enabled:
+3. Verify Pi-hole DHCP is enabled:
    - Access Pi-hole admin UI
    - Go to Settings → DHCP
    - Ensure DHCP server is enabled
