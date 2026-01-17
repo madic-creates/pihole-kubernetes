@@ -72,7 +72,7 @@ spec:
           # -s  : Pi-hole DHCP service (DNS name for cluster resolution)
           args:
              - "-w"
-             - "65"
+             - "30"
              - "-d"
              - "-p"
              - "-n"
