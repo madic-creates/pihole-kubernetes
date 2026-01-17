@@ -181,10 +181,9 @@ probes:
     # -- Generate a liveness probe
     # 'type' defaults to command, can be set to 'httpGet' to use a HTTP GET type liveness probe.
     type: command
-    command:
-      - /bin/sh
-      - -c
-      - "curl --silent http://localhost/api/info/login | jq 'if (.dns | not) then halt_error(1) end' && dig cloudflare.com @127.0.0.1"
+    # -- Custom command for the liveness probe (leave empty for default using webHttp/dnsPort)
+    # Default command: /bin/sh -c "curl --silent http://localhost:${webHttp}/api/info/login | jq 'if (.dns | not) then halt_error(1) end' && dig cloudflare.com @127.0.0.1 -p ${dnsPort}"
+    command: []
     enabled: true
     # -- wait time before trying the liveness probe (can be 0 when startup probe is enabled)
     initialDelaySeconds: 0
@@ -202,10 +201,9 @@ probes:
     # -- Generate a readiness probe
     # 'type' defaults to command, can be set to 'httpGet' to use a HTTP GET type readiness probe.
     type: command
-    command:
-      - /bin/sh
-      - -c
-      - "curl --silent http://localhost/api/info/login | jq 'if (.dns | not) then halt_error(1) end' && dig cloudflare.com @127.0.0.1"
+    # -- Custom command for the readiness probe (leave empty for default using webHttp/dnsPort)
+    # Default command: /bin/sh -c "curl --silent http://localhost:${webHttp}/api/info/login | jq 'if (.dns | not) then halt_error(1) end' && dig cloudflare.com @127.0.0.1 -p ${dnsPort}"
+    command: []
     enabled: true
     # -- wait time before trying the readiness probe (can be 0 when startup probe is enabled)
     initialDelaySeconds: 0
@@ -225,10 +223,9 @@ probes:
     # The startup probe runs before liveness/readiness probes begin.
     # Once it succeeds, liveness and readiness probes take over.
     type: command
-    command:
-      - /bin/sh
-      - -c
-      - "curl --silent http://localhost/api/info/login | jq 'if (.dns | not) then halt_error(1) end' && dig cloudflare.com @127.0.0.1"
+    # -- Custom command for the startup probe (leave empty for default using webHttp/dnsPort)
+    # Default command: /bin/sh -c "curl --silent http://localhost:${webHttp}/api/info/login | jq 'if (.dns | not) then halt_error(1) end' && dig cloudflare.com @127.0.0.1 -p ${dnsPort}"
+    command: []
     enabled: true
     # -- wait time before trying the startup probe
     initialDelaySeconds: 5
@@ -361,6 +358,8 @@ doh:
   tag: 2.1.15
   # -- Pull policy
   pullPolicy: IfNotPresent
+  # -- port dnscrypt-proxy listens on (must match listen_addresses in config)
+  port: "5053"
   # -- Here you can pass environment variables to the dnscrypt-proxy container
   envVars: {}
   # -- Custom command to the dnscrypt-proxy container
@@ -425,13 +424,9 @@ doh:
     liveness:
       # -- set to true to enable liveness probe
       enabled: true
-      # -- customize the liveness probe (uses dnsprobe tool)
-      probe:
-        exec:
-          command:
-            - /usr/local/bin/dnsprobe
-            - cloudflare.com
-            - 127.0.0.1:5053
+      # -- customize the liveness probe (leave empty for default using doh.port)
+      # Default command: /usr/local/bin/dnsprobe cloudflare.com "127.0.0.1:${doh.port}"
+      probe: {}
       # -- defines the initial delay for the liveness probe (can be 0 when startup probe is enabled)
       initialDelaySeconds: 0
       # -- probe interval in seconds
@@ -445,13 +440,9 @@ doh:
     readiness:
       # -- set to true to enable readiness probe
       enabled: true
-      # -- customize the readiness probe (uses dnsprobe tool)
-      probe:
-        exec:
-          command:
-            - /usr/local/bin/dnsprobe
-            - cloudflare.com
-            - 127.0.0.1:5053
+      # -- customize the readiness probe (leave empty for default using doh.port)
+      # Default command: /usr/local/bin/dnsprobe cloudflare.com "127.0.0.1:${doh.port}"
+      probe: {}
       # -- defines the initial delay for the readiness probe (can be 0 when startup probe is enabled)
       initialDelaySeconds: 0
       # -- probe interval in seconds
@@ -465,13 +456,9 @@ doh:
     startup:
       # -- set to true to enable startup probe
       enabled: true
-      # -- customize the startup probe (uses dnsprobe tool)
-      probe:
-        exec:
-          command:
-            - /usr/local/bin/dnsprobe
-            - cloudflare.com
-            - 127.0.0.1:5053
+      # -- customize the startup probe (leave empty for default using doh.port)
+      # Default command: /usr/local/bin/dnsprobe cloudflare.com "127.0.0.1:${doh.port}"
+      probe: {}
       # -- defines the initial delay for the startup probe
       initialDelaySeconds: 5
       # -- probe interval in seconds
@@ -560,6 +547,12 @@ webHttp: "80"
 
 # -- port the container should use to expose HTTPS traffic
 webHttps: "443"
+
+# -- port the container should use to expose DNS traffic
+dnsPort: "53"
+
+# -- port the container should use to expose DHCP traffic
+dhcpPort: "67"
 
 # -- hostname of pod
 hostname: ""

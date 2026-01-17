@@ -155,7 +155,15 @@ spec:
               readOnly: true
           {{- if .Values.doh.probes.liveness.enabled }}
           livenessProbe:
+            {{- if .Values.doh.probes.liveness.probe }}
 {{ toYaml .Values.doh.probes.liveness.probe | indent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - /usr/local/bin/dnsprobe
+                - cloudflare.com
+                - "127.0.0.1:{{ .Values.doh.port }}"
+            {{- end }}
             failureThreshold: {{ .Values.doh.probes.liveness.failureThreshold }}
             periodSeconds: {{ .Values.doh.probes.liveness.periodSeconds }}
             successThreshold: {{ .Values.doh.probes.liveness.successThreshold }}
@@ -163,7 +171,15 @@ spec:
           {{- end }}
           {{- if .Values.doh.probes.readiness.enabled }}
           readinessProbe:
+            {{- if .Values.doh.probes.readiness.probe }}
 {{ toYaml .Values.doh.probes.readiness.probe | indent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - /usr/local/bin/dnsprobe
+                - cloudflare.com
+                - "127.0.0.1:{{ .Values.doh.port }}"
+            {{- end }}
             failureThreshold: {{ .Values.doh.probes.readiness.failureThreshold }}
             periodSeconds: {{ .Values.doh.probes.readiness.periodSeconds }}
             successThreshold: {{ .Values.doh.probes.readiness.successThreshold }}
@@ -171,7 +187,15 @@ spec:
           {{- end }}
           {{- if .Values.doh.probes.startup.enabled }}
           startupProbe:
+            {{- if .Values.doh.probes.startup.probe }}
 {{ toYaml .Values.doh.probes.startup.probe | indent 12 }}
+            {{- else }}
+            exec:
+              command:
+                - /usr/local/bin/dnsprobe
+                - cloudflare.com
+                - "127.0.0.1:{{ .Values.doh.port }}"
+            {{- end }}
             failureThreshold: {{ .Values.doh.probes.startup.failureThreshold }}
             initialDelaySeconds: {{ .Values.doh.probes.startup.initialDelaySeconds }}
             periodSeconds: {{ .Values.doh.probes.startup.periodSeconds }}
@@ -247,13 +271,13 @@ spec:
           - containerPort: {{ .Values.webHttp }}
             name: http
             protocol: TCP
-          - containerPort: {{ .Values.serviceDns.port }}
+          - containerPort: {{ .Values.dnsPort }}
             name: dns
             protocol: TCP
           {{- if .Values.dnsHostPort.enabled }}
             hostPort: {{ .Values.dnsHostPort.port }}
           {{- end }}
-          - containerPort: {{ .Values.serviceDns.port }}
+          - containerPort: {{ .Values.dnsPort }}
             name: dns-udp
             protocol: UDP
           {{- if .Values.dnsHostPort.enabled }}
@@ -262,14 +286,21 @@ spec:
           - containerPort:  {{ .Values.webHttps }}
             name: https
             protocol: TCP
-          - containerPort: {{ .Values.serviceDhcp.port }}
+          - containerPort: {{ .Values.dhcpPort }}
             name: client-udp
             protocol: UDP
           {{- if .Values.probes.liveness.enabled }}
           livenessProbe:
             {{- if eq .Values.probes.liveness.type "command" }}
             exec:
-              command: {{ .Values.probes.liveness.command | required "An array of command(s) is required if 'type' is set to 'command'." | toYaml | nindent 16 }}
+              {{- if .Values.probes.liveness.command }}
+              command: {{ .Values.probes.liveness.command | toYaml | nindent 16 }}
+              {{- else }}
+              command:
+                - /bin/sh
+                - -c
+                - "curl --silent http://localhost:{{ .Values.webHttp }}/api/info/login | jq 'if (.dns | not) then halt_error(1) end' && dig cloudflare.com @127.0.0.1 -p {{ .Values.dnsPort }}"
+              {{- end }}
             {{- else }}
             httpGet:
               path: /admin
@@ -285,7 +316,14 @@ spec:
           readinessProbe:
             {{- if eq .Values.probes.readiness.type "command" }}
             exec:
-              command: {{ .Values.probes.readiness.command | required "An array of command(s) is required if 'type' is set to 'command'." | toYaml | nindent 16 }}
+              {{- if .Values.probes.readiness.command }}
+              command: {{ .Values.probes.readiness.command | toYaml | nindent 16 }}
+              {{- else }}
+              command:
+                - /bin/sh
+                - -c
+                - "curl --silent http://localhost:{{ .Values.webHttp }}/api/info/login | jq 'if (.dns | not) then halt_error(1) end' && dig cloudflare.com @127.0.0.1 -p {{ .Values.dnsPort }}"
+              {{- end }}
             {{- else }}
             httpGet:
               path: /admin
@@ -301,7 +339,14 @@ spec:
           startupProbe:
             {{- if eq .Values.probes.startup.type "command" }}
             exec:
-              command: {{ .Values.probes.startup.command | required "An array of command(s) is required if 'type' is set to 'command'." | toYaml | nindent 16 }}
+              {{- if .Values.probes.startup.command }}
+              command: {{ .Values.probes.startup.command | toYaml | nindent 16 }}
+              {{- else }}
+              command:
+                - /bin/sh
+                - -c
+                - "curl --silent http://localhost:{{ .Values.webHttp }}/api/info/login | jq 'if (.dns | not) then halt_error(1) end' && dig cloudflare.com @127.0.0.1 -p {{ .Values.dnsPort }}"
+              {{- end }}
             {{- else }}
             httpGet:
               path: /admin
